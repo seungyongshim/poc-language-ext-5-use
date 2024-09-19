@@ -48,7 +48,8 @@ async Task Case3()
 
     try
     {
-        await io.RunAsync(EnvIO.New());
+        using var envio = EnvIO.New();
+        await io.RunAsync(envio);
     }
     catch { }
 }
