@@ -74,7 +74,7 @@ async Task Case5()
     services.AddKeyedScoped<DisposableClass>("5");
     await using var sp = services.BuildServiceProvider();
 
-    K<Eff<IServiceProvider>, Unit> effect =
+    var effect =
         from scope in use(liftEff((IServiceProvider rt) => rt.CreateAsyncScope()))
         from _0 in localEff<IServiceProvider, IServiceProvider, Unit>(rt => scope.ServiceProvider, 
             from _1 in liftEff((IServiceProvider rt) => rt.GetRequiredKeyedService<DisposableClass>("5"))
@@ -99,11 +99,22 @@ public class DisposableClass([ServiceKey] string Id) : IDisposable, IAsyncDispos
     }
 }
 
-public record Runtime
+public readonly record struct Runtime
 (
-    DisposableClass DisposableClass
-) : Has<Eff<Runtime>, DisposableClass>
+    IServiceProvider ServiceProvider
+) : Local<Eff<Runtime>, IServiceProvider>
 {
-    static K<Eff<Runtime>, DisposableClass> Has<Eff<Runtime>, DisposableClass>.Ask =>
-        Readable.asks<Eff<Runtime>, Runtime, DisposableClass>((Runtime rt) => rt.DisposableClass);
+    static K<Eff<Runtime>, A> asks<A>(Func<Runtime, A> f) =>
+    Readable.asks<Eff<Runtime>, Runtime, A>(f);
+
+    static K<Eff<Runtime>, A> local<A>(Func<Runtime, Runtime> f, K<Eff<Runtime>, A> ma) =>
+        Readable.local(f, ma);
+    static K<Eff<Runtime>, A> Local<Eff<Runtime>, IServiceProvider>.With<A>(Func<IServiceProvider, IServiceProvider> f, K<Eff<Runtime>, A> ma) =>
+        local(rt => rt with
+        {
+            ServiceProvider = f(rt.ServiceProvider)
+        }, ma);
+
+    static K<Eff<Runtime>, IServiceProvider> Has<Eff<Runtime>, IServiceProvider>.Ask =>
+        asks(rt => rt.ServiceProvider);
 }
