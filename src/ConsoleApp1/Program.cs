@@ -1,5 +1,6 @@
 using LanguageExt;
-using LanguageExt.Sys.Live;
+using LanguageExt.Traits;
+using Microsoft.Extensions.DependencyInjection;
 using static LanguageExt.Prelude;
 
 Console.WriteLine("## 1. Expect");
@@ -35,7 +36,7 @@ async Task Case2()
     {
         await io.RunAsync();
     }
-    catch    {    }
+    catch { }
 }
 
 async Task Case3()
@@ -65,29 +66,44 @@ async Task Case4()
     await effect.RunAsync();
 }
 
+
+
 async Task Case5()
 {
-    Eff<Runtime, Unit> effect =
-        from _1 in use(() => new DisposableClass("5"))
-        from __ in liftIO(() => throw new Exception("crash"))
-        from _2 in release(_1)
+    ServiceCollection services = new();
+    services.AddKeyedScoped<DisposableClass>("5");
+    await using var sp = services.BuildServiceProvider();
+
+    K<Eff<IServiceProvider>, Unit> effect =
+        from scope in use(liftEff((IServiceProvider rt) => rt.CreateAsyncScope()))
+        from _0 in localEff<IServiceProvider, IServiceProvider, Unit>(rt => scope.ServiceProvider, 
+            from _1 in liftEff((IServiceProvider rt) => rt.GetRequiredKeyedService<DisposableClass>("5"))
+            from __ in liftIO(action: static () => throw new Exception("crash"))
+            select unit)
         select unit;
 
-    await effect.RunAsync(Runtime.New());
+    await effect.RunAsync(sp);
 }
 
-public class DisposableClass(string Id) : IDisposable, IAsyncDisposable
+public class DisposableClass([ServiceKey] string Id) : IDisposable, IAsyncDisposable
 {
     public void Dispose()
     {
         Console.WriteLine($"- Disposed {Id}");
     }
-    public ValueTask DisposeAsync() 
+    public ValueTask DisposeAsync()
     {
         Console.WriteLine($"- DisposedAsync {Id}");
 
         return ValueTask.CompletedTask;
     }
-
 }
 
+public record Runtime
+(
+    DisposableClass DisposableClass
+) : Has<Eff<Runtime>, DisposableClass>
+{
+    static K<Eff<Runtime>, DisposableClass> Has<Eff<Runtime>, DisposableClass>.Ask =>
+        Readable.asks<Eff<Runtime>, Runtime, DisposableClass>((Runtime rt) => rt.DisposableClass);
+}
